@@ -1,0 +1,3 @@
+[submodule "libportaudio"]
+	path = libportaudio
+	url = https://github.com/jmscreation/libportaudio
