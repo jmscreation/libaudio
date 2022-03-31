@@ -112,13 +112,15 @@ SoundBuffer::SoundBuffer():
     samples(nullptr), sampleCount(0), bufferPos(0), defVolume(1), defDestroy(false) {}
 
 SoundBuffer::~SoundBuffer() {
-    AudioContext& ctx = AudioContext::current();
+    if(AudioContext::currentCtx != nullptr){
+        AudioContext& ctx = AudioContext::current();
 
-    ctx.locked.lock();
-    for(auto snd : ctx.playlist){
-        if(snd->sound == this) snd->stop(true);
+        ctx.locked.lock();
+        for(auto snd : ctx.playlist){
+            if(snd->sound == this) snd->stop(true);
+        }
+        ctx.locked.unlock();
     }
-    ctx.locked.unlock();
     
     if(samples != nullptr)
         delete samples;
@@ -278,11 +280,13 @@ SoundInstance::SoundInstance(SoundBuffer* buf, int playmode, bool dest, float vo
 }
 
 SoundInstance::~SoundInstance() {
-    AudioContext& ctx = AudioContext::current();
-    ctx.locked.lock();
-    auto i = std::find(ctx.playlist.begin(), ctx.playlist.end(), this);
-    if(i != ctx.playlist.end()) *i = nullptr;
-    ctx.locked.unlock();
+    if(AudioContext::currentCtx != nullptr){
+        AudioContext& ctx = AudioContext::current();
+        ctx.locked.lock();
+        auto i = std::find(ctx.playlist.begin(), ctx.playlist.end(), this);
+        if(i != ctx.playlist.end()) *i = nullptr;
+        ctx.locked.unlock();
+    }
 }
 
 void SoundInstance::play() {
