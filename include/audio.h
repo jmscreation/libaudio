@@ -13,6 +13,7 @@
 #include <atomic>
 #include <thread>
 #include <cmath>
+#include <algorithm>
 
 class AudioContext;
 class SoundBuffer;
