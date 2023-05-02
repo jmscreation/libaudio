@@ -75,7 +75,7 @@ int AudioContext::callback(const void* in,void* out,unsigned long fpb,
     for(unsigned int samp=0; samp<fpb; samp++) {
         L = R = 0;
         for(uint32_t i=0; i<playsz; i++) {
-            if(playlist[i] == nullptr) continue;
+            if(playlist[i] == nullptr || playlist[i]->garbage) continue;
             if(playlist[i]->sample(lv,rv)){
                 L += lv; R += rv;
             }
@@ -87,10 +87,14 @@ int AudioContext::callback(const void* in,void* out,unsigned long fpb,
     return 0;
 }
 
+pSoundInstance AudioContext::allocateSoundInstance(SoundBuffer* buf, int playmode, bool dest, float volume) {
+    return new SoundInstance(buf, playmode, dest, volume);
+}
+
 void AudioContext::callbackAutoDestroy(AudioContext* ctx) {
     std::vector<pSoundInstance> garbage;
     do {
-        std::this_thread::sleep_for(std::chrono::seconds(3));
+        std::this_thread::sleep_for(std::chrono::seconds(10));
 
         {
             std::unique_lock<std::mutex> lock(ctx->locked, std::try_to_lock);
@@ -243,27 +247,27 @@ float SoundBuffer::length() {
 }
 
 pSoundInstance SoundBuffer::play() {
-    return new SoundInstance(this, 1, defDestroy, defVolume);
+    return AudioContext::current().allocateSoundInstance(this, 1, defDestroy, defVolume);
 }
 
 pSoundInstance SoundBuffer::play(bool dest) {
-    return new SoundInstance(this, 1, dest, defVolume);
+    return AudioContext::current().allocateSoundInstance(this, 1, dest, defVolume);
 }
 
 pSoundInstance SoundBuffer::loop() {
-    return new SoundInstance(this, 2, defDestroy, defVolume);
+    return AudioContext::current().allocateSoundInstance(this, 2, defDestroy, defVolume);
 }
 
 pSoundInstance SoundBuffer::loop(bool dest) {
-    return new SoundInstance(this, 2, dest, defVolume);
+    return AudioContext::current().allocateSoundInstance(this, 2, dest, defVolume);
 }
 
 pSoundInstance SoundBuffer::create() {
-    return new SoundInstance(this, 0, defDestroy, defVolume);
+    return AudioContext::current().allocateSoundInstance(this, 0, defDestroy, defVolume);
 }
 
 pSoundInstance SoundBuffer::create(bool dest) {
-    return new SoundInstance(this,0,dest,defVolume);
+    return AudioContext::current().allocateSoundInstance(this, 0, dest, defVolume);
 }
 
 void SoundBuffer::sample(float& L, float& R, const double& p) {
