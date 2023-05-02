@@ -93,8 +93,8 @@ private:
 class SoundInstance {
 	SoundBuffer* sound;
 	double pos;
-	float speed, volPan, vol, pspeed;
-	bool destroy, looping;
+	std::atomic<float> speed, volPan, vol, pspeed;
+	std::atomic<bool> destroy, looping;
 	std::atomic<bool> garbage;
 public:
 	SoundInstance(SoundBuffer* buf, int playmode=0, bool destroy=false, float volume=1);

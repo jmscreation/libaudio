@@ -61,9 +61,13 @@ int AudioContext::callbackStatic(const void* in,void* out,unsigned long fpb,
 int AudioContext::callback(const void* in,void* out,unsigned long fpb,
     const PaStreamCallbackTimeInfo* tmi,PaStreamCallbackFlags flgs) {
 
-    std::lock_guard lock(locked);
+    std::unique_lock<std::mutex> lock(locked);
 
     uint32_t playsz = playlist.size();
+
+    if(!playsz){
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
 
     float *samples_out = (float*)out;
 
@@ -87,20 +91,26 @@ void AudioContext::callbackAutoDestroy(AudioContext* ctx) {
     std::vector<pSoundInstance> garbage;
     do {
         std::this_thread::sleep_for(std::chrono::seconds(3));
-        ctx->locked.lock();
-        
-        for(int i=ctx->playlist.size() - 1; i >= 0; --i){
-            pSoundInstance& snd = ctx->playlist[i];
-            if(snd != nullptr && snd->garbage){
-                garbage.push_back(snd);
-                snd = nullptr;
-            }
-            if(snd == nullptr){
-                ctx->playlist.erase(ctx->playlist.begin() + i);
-                continue;
+
+        {
+            std::unique_lock<std::mutex> lock(ctx->locked, std::try_to_lock);
+
+            if(!lock.owns_lock()) continue;
+
+            for(auto& snd : ctx->playlist) {
+                if(garbage.size() >= ctx->playlist.size()) break;
+
+                if(snd == nullptr || snd->garbage){
+                    garbage.push_back(snd);
+                    auto& end = ctx->playlist.at(ctx->playlist.size() - garbage.size());
+                    if(&snd != &end){
+                        std::swap(snd, end);
+                    }
+                    ctx->playlist.pop_back();
+                    if(ctx->playlist.empty()) break;
+                }
             }
         }
-        ctx->locked.unlock();
 
         for(pSoundInstance snd : garbage) delete snd;
         garbage.clear();
@@ -115,11 +125,10 @@ SoundBuffer::~SoundBuffer() {
     if(AudioContext::currentCtx != nullptr){
         AudioContext& ctx = AudioContext::current();
 
-        ctx.locked.lock();
+        std::unique_lock<std::mutex> lock(ctx.locked);
         for(auto snd : ctx.playlist){
             if(snd->sound == this) snd->stop(true);
         }
-        ctx.locked.unlock();
     }
     
     if(samples != nullptr)
@@ -213,14 +222,14 @@ bool SoundBuffer::isPlaying() {
     AudioContext& ctx = AudioContext::current();
     bool found = false;
 
-    ctx.locked.lock();
+    std::unique_lock<std::mutex> lock(ctx.locked);
+
     for(auto snd : ctx.playlist){
         if(snd->sound == this){
             found = true;
             break;
         }
     }
-    ctx.locked.unlock();
 
     return found;
 }
@@ -274,18 +283,17 @@ SoundInstance::SoundInstance(SoundBuffer* buf, int playmode, bool dest, float vo
     sound(buf), pos(0), speed(playmode==0 ? 0 : buf->sampleFactor), volPan(0), vol(volume), pspeed(1), destroy(dest), looping(playmode==2), garbage(false) {
     AudioContext& ctx = AudioContext::current();
 
-    ctx.locked.lock();
+    std::unique_lock lock(ctx.locked);
     ctx.playlist.push_back(this);
-    ctx.locked.unlock();
 }
 
 SoundInstance::~SoundInstance() {
     if(AudioContext::currentCtx != nullptr){
         AudioContext& ctx = AudioContext::current();
-        ctx.locked.lock();
+
+        std::unique_lock<std::mutex> lock(ctx.locked);
         auto i = std::find(ctx.playlist.begin(), ctx.playlist.end(), this);
         if(i != ctx.playlist.end()) *i = nullptr;
-        ctx.locked.unlock();
     }
 }
 
@@ -339,8 +347,8 @@ bool SoundInstance::sample(float& L,float& R) {
     if(garbage) return false;
 
     sound->sample(L,R,pos);
-    L *= (1-(volPan<0 ? 0 : volPan)) * vol;
-    R *= ((volPan>1 ? 1 : volPan)+1) * vol;
+    L *= (1-(volPan.load() < 0.f ? 0.f : volPan.load())) * vol;
+    R *= ((volPan.load() > 1.f ? 1.f : volPan.load()) + 1.f) * vol;
     pos += speed;
     if(speed) {
         if(pos > double(sound->sampleCount-1)) {
