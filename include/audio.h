@@ -46,6 +46,8 @@ private:
 			const PaStreamCallbackTimeInfo* tmi,PaStreamCallbackFlags flgs);
 	static void callbackAutoDestroy(AudioContext* ctx);
 
+	pSoundInstance allocateSoundInstance(SoundBuffer* buf, int playmode, bool dest, float volume);
+
 	friend class SoundBuffer;
 	friend class SoundInstance;
 };
